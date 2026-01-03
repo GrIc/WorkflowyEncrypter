@@ -27,19 +27,19 @@ function injectScript(file_path) {
     var script = document.createElement('script');
     script.setAttribute('type', 'text/javascript');
     script.setAttribute('src', file_path);
-    document.body.appendChild(script);
+    (document.head || document.documentElement).appendChild(script);
 }
 
 function injectStyle(file_path) {
     var link = document.createElement('link');
     link.setAttribute('rel', 'stylesheet');
     link.setAttribute('href', file_path);
-    document.head.appendChild(link);
+    (document.head || document.documentElement).appendChild(link);
 }
 
 function injectVar(key, value) {
     var variable = document.createElement('span');
     variable.id = "wfe-internal-" + key;
     variable.setAttribute('value', value);
-    document.body.appendChild(variable);
+    (document.body || document.documentElement).appendChild(variable);
 }

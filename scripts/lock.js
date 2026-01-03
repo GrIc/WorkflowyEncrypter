@@ -1,7 +1,8 @@
 const DOMAIN = "https://workflowy.com";
-const LOCK_TAG = "#private";
+const LOCK_TAG = "#private-dev";
 const PRE_ENC_CHAR = "_";
-var shared = []; // Share IDs
+const ENC_BIN_PREFIX = new Uint8Array([95, 69, 78, 67, 95]); // _ENC_
+var pendingUploads = {}; // Key -> true
 
 var trackedChanges = [];
 var cacheClearPerformed = false;
@@ -14,7 +15,7 @@ var clientVersion = "";
 var wfBuildDate = "";
 var mostRecentOperationTransactionId = "";
 
-const {fetch: origFetch} = window;
+const { fetch: origFetch } = window;
 
 const DEFAULT_SHARE_ID = 'DEFAULT';
 
@@ -83,7 +84,7 @@ class BaseUtil {
   endpointMatches(path, method, url, params) {
     return url.includes(DOMAIN + path) && method === params.method;
   }
-  
+
   isString(val) {
     return typeof val === 'string' || val instanceof String;
   }
@@ -101,7 +102,11 @@ class BaseUtil {
   }
 }
 const u = new BaseUtil();
-u.updateTheme();
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => u.updateTheme());
+} else {
+  u.updateTheme();
+}
 
 class NodeTracker {
   NODES = {};
@@ -134,7 +139,7 @@ class NodeTracker {
       delete properties[PROPERTIES.PARENT];
     }
 
-    let updatedNode = {...node, ...properties};
+    let updatedNode = { ...node, ...properties };
     updatedNode[PROPERTIES.LOCKED] = (updatedNode[PROPERTIES.NAME] ?? "").includes(LOCK_TAG);
 
     this.NODES[id] = updatedNode;
@@ -145,7 +150,7 @@ class NodeTracker {
     delete this.NODES[id];
   }
 
-  
+
   /**
    * Return node if no property is specified
    * Return node's property if property is specified
@@ -171,7 +176,7 @@ class NodeTracker {
   getShareId(id) {
     return this.get(id, PROPERTIES.SHARE_ID, true);
   }
-  
+
   getParent(id) {
     return this.get(id, PROPERTIES.PARENT, false);
   }
@@ -451,8 +456,8 @@ class Popup {
       this.show();
 
       if (cancellable) {
-        document.getElementById("_popup").addEventListener('click', function(evt) {
-          if ( evt.target != this ) return false;
+        document.getElementById("_popup").addEventListener('click', function (evt) {
+          if (evt.target != this) return false;
           Popup.onClick(null, OUTCOMES.CANCEL);
         });
       }
@@ -518,7 +523,7 @@ class Popup {
     const input = page["input"] ?? null;
     const buttons = page["buttons"] ?? [];
     const htmlList = page["html"] ?? [];
-    const script = page["script"] ?? (() => {});
+    const script = page["script"] ?? (() => { });
 
     // Remove current page
     let content = document.getElementById("_popup-content");
@@ -543,7 +548,7 @@ class Popup {
       var divElement1 = document.createElement('div');
       divElement1.classList.add("_input");
       content.appendChild(divElement1);
-      
+
       var textElement = document.createElement('p');
       textElement.classList.add("_input-text");
       textElement.innerHTML = input["label"];
@@ -565,7 +570,7 @@ class Popup {
     buttonsElement.classList.add("_popup-buttons");
     buttonsElement.id = "_popup-buttons";
     content.appendChild(buttonsElement);
-    
+
     if (buttons.length === 0) {
       if (type === POPUP_TYPES.DEFAULT) {
         buttons.push({
@@ -593,11 +598,11 @@ class Popup {
       buttonElement.innerHTML = type === POPUP_TYPES.DEFAULT
         ? buttonData.text :
         ('<span>' + buttonData.text + '</span><span class="' + (buttonData.primary ? '_popup-button-hint-primary' : '_popup-button-hint-secondary') + '">' + (buttonData.primary ? '&nbsp;⏎' : '&nbsp;esc') + '</span>');
-      
-        let onClickFunc = () => {
-          Popup.onClick(i, buttonData.outcome);
-        }
-        buttonElement.onclick = onClickFunc;
+
+      let onClickFunc = () => {
+        Popup.onClick(i, buttonData.outcome);
+      }
+      buttonElement.onclick = onClickFunc;
       if (type === POPUP_TYPES.MINI) {
         if (buttonData.primary) {
           Popup.args.primaryOnClick = onClickFunc;
@@ -697,15 +702,15 @@ class PopupHelper {
             const logo = document.getElementById("_html1-logo");
             var boxRect = box.getBoundingClientRect(),
               elemRect = logo.getBoundingClientRect(),
-              offsetTop   = elemRect.top - boxRect.top,
-              offsetLeft   = elemRect.left - boxRect.left;
-    
-            blue.style.left = offsetLeft + (64/2) - 1 + "px";
-            blue.style.top = offsetTop + (64/2) + "px";
-            blueContent.style.left = (-offsetLeft - (64/2) + 1) + "px";
-            blueContent.style.top = (-offsetTop - (64/2)) + "px";
+              offsetTop = elemRect.top - boxRect.top,
+              offsetLeft = elemRect.left - boxRect.left;
+
+            blue.style.left = offsetLeft + (64 / 2) - 1 + "px";
+            blue.style.top = offsetTop + (64 / 2) + "px";
+            blueContent.style.left = (-offsetLeft - (64 / 2) + 1) + "px";
+            blueContent.style.top = (-offsetTop - (64 / 2)) + "px";
             text2.style.width = text1.offsetWidth + "px";
-            
+
             let setRandomText = (text2) => {
               text2.textContent = PRE_ENC_CHAR + u.randomStr(15 - PRE_ENC_CHAR.length);
               setTimeout(() => {
@@ -727,7 +732,7 @@ class PopupHelper {
           buttons: [{
             outcome: OUTCOMES.CUSTOM,
             text: "Next",
-            onClick: async function() {
+            onClick: async function () {
               let key = document.getElementById("_input-box").value;
               if (key.replaceAll(" ", "").length === 0) {
                 toast.show("Key cannot be empty.", "Provide a valid key and try again.", "KEY");
@@ -774,13 +779,13 @@ class PopupHelper {
             const logo = document.getElementById("_html1-logo");
             var boxRect = box.getBoundingClientRect(),
               elemRect = logo.getBoundingClientRect(),
-              offsetTop   = elemRect.top - boxRect.top,
-              offsetLeft   = elemRect.left - boxRect.left;
-    
-            blue.style.left = offsetLeft + (64/2) - 1 + "px";
-            blue.style.top = offsetTop + (64/2) + "px";
-            blueContent.style.left = (-offsetLeft - (64/2) + 1) + "px";
-            blueContent.style.top = (-offsetTop - (64/2)) + "px";
+              offsetTop = elemRect.top - boxRect.top,
+              offsetLeft = elemRect.left - boxRect.left;
+
+            blue.style.left = offsetLeft + (64 / 2) - 1 + "px";
+            blue.style.top = offsetTop + (64 / 2) + "px";
+            blueContent.style.left = (-offsetLeft - (64 / 2) + 1) + "px";
+            blueContent.style.top = (-offsetTop - (64 / 2)) + "px";
           }
         }
       ]
@@ -797,7 +802,7 @@ class API {
 
   // async loadTree() {
   //   this.removeTree();
-    
+
   //   await this.loadSpecificTree("/get_tree_data/");
   //   for (let shareId of shared) {
   //     await this.loadSpecificTree("/get_tree_data/?share_id=" + shareId);
@@ -856,7 +861,7 @@ class API {
         pushPollDataInstance.share_id = shareId;
       }
       rawBody.push_poll_data.push(pushPollDataInstance);
-      
+
       mostRecentOperationTransactionId++; // Find whether increment is needed
     }
 
@@ -873,6 +878,37 @@ class API {
       url: DOMAIN + "/push_and_poll"
     });
   }
+
+  async uploadFile(parentId, blob, filename) {
+    const formData = new FormData();
+    formData.append("parent_item", parentId);
+    formData.append("file_size", blob.size);
+    formData.append("file_type", blob.type);
+    formData.append("file_name", filename);
+
+    // Get parameters (using origFetch to avoid interceptors adjusting size)
+    const presignReq = await origFetch("/files/get-presigned-post-url", {
+      method: "POST",
+      body: formData,
+      headers: { "x-requested-with": "XMLHttpRequest" }
+    });
+    const presignData = await presignReq.json();
+
+    // Upload to S3
+    const s3Data = new FormData();
+    for (let key in presignData.fields) {
+      s3Data.append(key, presignData.fields[key]);
+    }
+    s3Data.append("file", blob, filename);
+
+    await origFetch(presignData.url, {
+      method: "POST",
+      body: s3Data
+    });
+
+    // Construct S3 URL
+    return presignData.url + "/" + presignData.fields.key;
+  }
 }
 const api = new API();
 
@@ -880,7 +916,7 @@ class Cache {
   get(key, defVal = null) {
     let cacheData = window.localStorage.getItem("lockCache");
     cacheData = cacheData ? JSON.parse(cacheData) : {};
-    return cacheData[key] ? cacheData[key].val : defVal; 
+    return cacheData[key] ? cacheData[key].val : defVal;
   }
 
   set(key, val) {
@@ -945,7 +981,7 @@ class Encrypter {
     cache.set(PRE_ENC_CHAR + encryptedData, data);
     return PRE_ENC_CHAR + encryptedData;
   }
-  
+
   async decrypt(data) {
     if (!data.startsWith(PRE_ENC_CHAR)) {
       return data;
@@ -1046,6 +1082,67 @@ class Encrypter {
       return "";
     }
   }
+
+  async encryptBinary(data) {
+    if (!this.SECRET) return data;
+    try {
+      const salt = window.crypto.getRandomValues(new Uint8Array(16));
+      const iv = window.crypto.getRandomValues(new Uint8Array(12));
+      const passwordKey = await this.getPasswordKey(this.SECRET);
+      const aesKey = await this.deriveKey(passwordKey, salt, ["encrypt"]);
+      const encryptedContent = await window.crypto.subtle.encrypt(
+        {
+          name: "AES-GCM",
+          iv: iv,
+        },
+        aesKey,
+        data
+      );
+
+      const encryptedContentArr = new Uint8Array(encryptedContent);
+      let buff = new Uint8Array(
+        ENC_BIN_PREFIX.byteLength + salt.byteLength + iv.byteLength + encryptedContentArr.byteLength
+      );
+      buff.set(ENC_BIN_PREFIX, 0);
+      buff.set(salt, ENC_BIN_PREFIX.byteLength);
+      buff.set(iv, ENC_BIN_PREFIX.byteLength + salt.byteLength);
+      buff.set(encryptedContentArr, ENC_BIN_PREFIX.byteLength + salt.byteLength + iv.byteLength);
+      return buff;
+    } catch (e) {
+      console.error("[Workflowy Encrypter] Binary Encryption error", e);
+      return data;
+    }
+  }
+
+  async decryptBinary(data) {
+    if (!this.SECRET) return data;
+    try {
+      const prefixLen = ENC_BIN_PREFIX.byteLength;
+      // Check prefix
+      for (let i = 0; i < prefixLen; i++) {
+        if (data[i] !== ENC_BIN_PREFIX[i]) return data; // Not encrypted
+      }
+
+      const salt = data.slice(prefixLen, prefixLen + 16);
+      const iv = data.slice(prefixLen + 16, prefixLen + 16 + 12);
+      const content = data.slice(prefixLen + 16 + 12);
+
+      const passwordKey = await this.getPasswordKey(this.SECRET);
+      const aesKey = await this.deriveKey(passwordKey, salt, ["decrypt"]);
+      const decryptedContent = await window.crypto.subtle.decrypt(
+        {
+          name: "AES-GCM",
+          iv: iv,
+        },
+        aesKey,
+        content
+      );
+      return new Uint8Array(decryptedContent);
+    } catch (e) {
+      console.error("[Workflowy Encrypter] Binary Decryption error", e);
+      return data;
+    }
+  }
 }
 const encrypter = new Encrypter();
 encrypter.loadSecret();
@@ -1065,14 +1162,14 @@ class Util {
     }
     return body;
   }
-  
+
   async decodeBody(body) {
     let list = [];
     for (const key in body) {
       if (!body.hasOwnProperty(key)) {
         continue;
       }
-  
+
       let val = body[key];
       if (!u.isString(val)) {
         val = JSON.stringify(val);
@@ -1210,7 +1307,7 @@ class Util {
         obj.properties[PROPERTIES.DESCRIPTION] = project.no;
       }
       dataObj.push(obj);
-  
+
       if (project.ch && Array.isArray(project.ch)) {
         this.processCreateBulkDataRecursively(project.ch, project.id, dataObj);
       }
@@ -1227,7 +1324,7 @@ class Util {
       process: [],
       properties: {}
     };
-    
+
     if (operation.data.description !== undefined) {
       obj.properties[PROPERTIES.DESCRIPTION] = operation.data["description"];
       obj.process.push({
@@ -1283,7 +1380,7 @@ class Util {
                 outcome: OUTCOMES.COMPLETE,
                 primary: true
               }
-            ], true, {type: POPUP_TYPES.MINI})) === OUTCOMES.COMPLETE
+            ], true, { type: POPUP_TYPES.MINI })) === OUTCOMES.COMPLETE
         ) {
           await this.updateChildNodeEncryption(id, false, false, flags);
         } else {
@@ -1331,7 +1428,7 @@ class Util {
     if (
       (!processingParent || processParentNode) &&
       (processingParent || parent === rootId || (parent !== rootId && !nodes.isLocked(parent, true)))
-      ) {
+    ) {
       let operation = {
         type: "edit",
         client_timestamp: null, // Find what to send
@@ -1410,7 +1507,7 @@ class Util {
                 outcome: OUTCOMES.COMPLETE,
                 primary: true
               }
-            ], true, {type: POPUP_TYPES.MINI})) === OUTCOMES.COMPLETE
+            ], true, { type: POPUP_TYPES.MINI })) === OUTCOMES.COMPLETE
         ) {
           decryptionAllowed = true;
           await this.updateChildNodeEncryption(id, false, true, flags);
@@ -1496,7 +1593,7 @@ class Util {
     let nodeIds = nodes.getChildren(targetParent)
     for (let nodeId of nodeIds) {
       let node = nodes.get(nodeId);
-      
+
       let treeNode = {
         share_id: nodes.getShareId(nodeId),
         id: nodeId,
@@ -1580,7 +1677,7 @@ class RouteHandler {
       }
     }
     if (attentionNeeded.length > 0 && encrypter.secretLoaded) {
-      await popup.create("Heads Up!", LOCK_TAG + " tag is removed from the following node(s) via a remote session. Add the tag again to keep your data protected; otherwise, your decrypted data will be sent to Workflowy servers: <br>- " + attentionNeeded.join("<br>- "), [], true, {type: POPUP_TYPES.MINI});
+      await popup.create("Heads Up!", LOCK_TAG + " tag is removed from the following node(s) via a remote session. Add the tag again to keep your data protected; otherwise, your decrypted data will be sent to Workflowy servers: <br>- " + attentionNeeded.join("<br>- "), [], true, { type: POPUP_TYPES.MINI });
     }
 
     return new Response(JSON.stringify(responseData));
@@ -1622,7 +1719,7 @@ class RouteHandler {
           info.rootProject.no = await encrypter.decrypt(info.rootProject.no);
           node[PROPERTIES.DESCRIPTION] = info.rootProject.no;
         }
-        
+
         nodes.update(info.rootProject.id, node);
       }
       shared.push(info.shareId);
@@ -1636,9 +1733,47 @@ class FetchWrapper {
   /**
    * Modify and return request params
    */
-  async onPreFetch(url, params) {
+  async onPreFetch(url, params = {}) {
+    if (url.includes("get-presigned-post-url") || url.includes("s3.amazonaws.com")) {
+      console.log(`[WE-DEBUG] onPreFetch: ${url}`, params);
+    }
     if (u.endpointMatches("/push_and_poll", "POST", url, params)) {
       return await routes.prePushAndPoll(params);
+    } else if (u.endpointMatches("/files/get-presigned-post-url", "POST", url, params)) {
+      console.log("[WE-DEBUG] Matched get-presigned-post-url");
+      // Step 1: Adjust size if parent is locked
+      const body = params.body;
+      if (body instanceof FormData) {
+        const parentId = body.get("parent_item");
+        const isLocked = nodes.isLocked(parentId);
+        console.log(`[WE-DEBUG] Parent: ${parentId}, Locked: ${isLocked}`);
+        if (isLocked) {
+          const originalSize = parseInt(body.get("file_size"));
+          const overhead = ENC_BIN_PREFIX.byteLength + 16 + 12 + 16; // Prefix + Salt + IV + AuthTag
+          body.set("file_size", originalSize + overhead);
+          pendingUploads["current_req"] = true; // Mark this flow as active
+        }
+      }
+    } else if (url.includes("s3.amazonaws.com") && params.method === "POST") {
+      console.log("[WE-DEBUG] Matched S3 Upload");
+      // Step 3: Encrypt if key matches pending
+      if (params.body instanceof FormData) {
+        const key = params.body.get("key");
+        console.log(`[WE-DEBUG] S3 Key: ${key}, Pending: ${pendingUploads[key]}`);
+        if (pendingUploads[key]) {
+          delete pendingUploads[key];
+          const file = params.body.get("file");
+          console.log("[WE-DEBUG] Encrypting file...", file);
+
+          // Encrypt file
+          const arrayBuffer = await file.arrayBuffer();
+          const encryptedBuffer = await encrypter.encryptBinary(new Uint8Array(arrayBuffer));
+          const encryptedBlob = new Blob([encryptedBuffer], { type: file.type });
+
+          params.body.set("file", encryptedBlob, file.name);
+          console.log("[WE-DEBUG] Encryption complete.");
+        }
+      }
     }
     return params;
   }
@@ -1647,8 +1782,12 @@ class FetchWrapper {
    * Modify response body
    */
   async onPostFetch(url, params, response) {
-    let responseData = await response.clone().json();
-    if (responseData.results && Array.isArray(responseData.results) && responseData.results.length > 0 && responseData.results[0].new_most_recent_operation_transaction_id) {
+    let responseData = null;
+    try {
+      responseData = await response.clone().json();
+    } catch (e) { } // Not JSON
+
+    if (responseData && responseData.results && Array.isArray(responseData.results) && responseData.results.length > 0 && responseData.results[0].new_most_recent_operation_transaction_id) {
       mostRecentOperationTransactionId = responseData.results[0].new_most_recent_operation_transaction_id;
     }
 
@@ -1658,9 +1797,17 @@ class FetchWrapper {
       return await routes.postPushAndPoll(responseData);
     } else if (u.endpointMatches("/get_initialization_data", "GET", url, params)) {
       return await routes.postGetInitializationData(responseData);
+    } else if (u.endpointMatches("/files/get-presigned-post-url", "POST", url, params)) {
+      if (pendingUploads["current_req"]) {
+        delete pendingUploads["current_req"];
+        if (responseData && responseData.fields && responseData.fields.key) {
+          pendingUploads[responseData.fields.key] = true;
+        }
+      }
     }
     return response;
   }
+
 }
 const fetchWrapper = new FetchWrapper();
 
@@ -1669,7 +1816,7 @@ window.fetch = async (...args) => {
   if (quarantine) {
     return;
   }
-  
+
   let url = args[0];
   let params = args[1];
 
@@ -1678,8 +1825,222 @@ window.fetch = async (...args) => {
     return;
   }
   args[1] = params;
-  
+
   const response = await origFetch(...args);
 
   return await fetchWrapper.onPostFetch(url, params, response);
 };
+
+// XHR Interception [https://stackoverflow.com/questions/5202296/add-a-hook-to-all-ajax-requests-on-a-page]
+const origOpen = XMLHttpRequest.prototype.open;
+const origSend = XMLHttpRequest.prototype.send;
+
+XMLHttpRequest.prototype.open = function (method, url) {
+  this._method = method;
+  this._url = url;
+  return origOpen.apply(this, arguments);
+};
+
+XMLHttpRequest.prototype.send = function (body) {
+  const url = this._url;
+  // DEBUG LOG
+  if (url && (url.includes("get-presigned-post-url") || url.includes("s3.amazonaws.com"))) {
+    console.log("[WE-DEBUG-XHR] Request:", url);
+  }
+
+  if (this._method === "POST" && body instanceof FormData) {
+    if (url && url.includes("/files/get-presigned-post-url")) {
+      console.log("[WE-DEBUG-XHR] Matched Presign");
+      const parentId = body.get("parent_item");
+      if (nodes.isLocked(parentId)) {
+        const originalSize = parseInt(body.get("file_size"));
+        const overhead = ENC_BIN_PREFIX.byteLength + 16 + 12 + 16;
+        body.set("file_size", originalSize + overhead);
+        console.log(`[WE-DEBUG-XHR] Adjusted Size: ${originalSize} -> ${originalSize + overhead}`);
+
+        // Hook onload to capture response key
+        const originalOnLoad = this.onload;
+        this.onload = function (e) {
+          try {
+            const responseParams = JSON.parse(this.responseText);
+            if (responseParams && responseParams.fields && responseParams.fields.key) {
+              console.log("[WE-DEBUG-XHR] Captured Pending Key:", responseParams.fields.key);
+              pendingUploads[responseParams.fields.key] = true;
+            }
+          } catch (err) {
+            console.error("[WE-DEBUG-XHR] Error parsing presign response", err);
+          }
+          if (originalOnLoad) originalOnLoad.apply(this, arguments);
+        }
+        // Also add listener in case onload is overwritten later (though we are wrapping late)
+        this.addEventListener("load", function () {
+          try {
+            const responseParams = JSON.parse(this.responseText);
+            if (responseParams && responseParams.fields && responseParams.fields.key) {
+              pendingUploads[responseParams.fields.key] = true;
+            }
+          } catch (err) { }
+        });
+      }
+    } else if (url && url.includes("s3.amazonaws.com")) {
+      console.log("[WE-DEBUG-XHR] Matched S3");
+      const key = body.get("key");
+      console.log(`[WE-DEBUG-XHR] Key: ${key}, Pending: ${pendingUploads[key]}`);
+
+      if (pendingUploads[key]) {
+        delete pendingUploads[key];
+        const file = body.get("file");
+
+        // We need to pause send, encrypt, then resume.
+        // UNFORTUNATELY: XMLHttpRequest.send is synchronous-ish regarding starting request? 
+        // Wait, we cannot await inside send().
+        // However, XHR send with blob/formdata is async.
+        // BUT we need to modify the body BEFORE calling origSend.
+
+        // CRITICAL: We cannot await inside this override function easily if the caller doesn't expect a promise.
+        // Solution: We must trigger the encryption synchronously or manage the state.
+        // BUT encryption is async (WebCrypto).
+
+        // HACK: Override send to a no-op initially? No, that breaks caller expectations.
+        // FIX: We can assume Workflowy code does not depend on immediate return of send() for logic?
+        // Actually, send() returns void. So we probably CAN'T await.
+
+        console.warn("[WE-DEBUG-XHR] Async Encryption problem in XHR.");
+        // We will try an IIFE approach but it won't block the caller code unless we replace the whole XHR object?
+
+        // BETTER APPROACH FOR ASYNC ENCRYPTION:
+        // Since crypto is async, we have to hijack the request completely or use a synchronous polyfill (bad).
+        // Or we do it in background? No.
+
+        // Wait, if we use `Object.defineProperty` to intercept `send` we might be able to delay?
+        // No, JS is single threaded.
+
+        // Alternative: We intercepted Step 1. We know encryption is needed.
+        // When Step 3 happens (Drag/Drop or File Input), the File object is created.
+        // Can we intercept the File creation? No.
+
+        // Can we use `FileReaderSync` in a Worker?
+        // `window.crypto.subtle` IS available in workers.
+
+        // Let's Try: We simply run the async logic and call origSend LATER.
+        // The caller of .send() expects it to return immediately (void).
+        // If we delay calling origSend, does it break Workflowy?
+        // It might if they rely on `xhr.readyState` changing immediately?
+        // Most uploaders just attach events and wait.
+
+        console.log("[WE-DEBUG-XHR] Starting Async Encryption override...");
+        const self = this;
+        const originalArgs = arguments;
+
+        const process = async () => {
+          try {
+            console.log("[WE-DEBUG-XHR] Encrypting...");
+            const arrayBuffer = await file.arrayBuffer();
+            const encryptedBuffer = await encrypter.encryptBinary(new Uint8Array(arrayBuffer));
+            const encryptedBlob = new Blob([encryptedBuffer], { type: file.type });
+            body.set("file", encryptedBlob, file.name);
+            console.log("[WE-DEBUG-XHR] Encrypted. Sending original.");
+            origSend.apply(self, [body]);
+          } catch (e) {
+            console.error("[WE-DEBUG-XHR] Encryption failed", e);
+            origSend.apply(self, originalArgs);
+          }
+        };
+        process();
+        return; // Return immediately, pretending we sent.
+      }
+    }
+  }
+  return origSend.apply(this, arguments);
+};
+
+// File Click Interception
+// File Click Interception
+document.addEventListener("click", async (e) => {
+  if (e.target.tagName === "A" && e.target.href && e.target.href.includes("s3.amazonaws.com")) {
+    const url = e.target.href;
+    e.preventDefault();
+    e.stopPropagation();
+
+    try {
+      console.log("[WE-DEBUG] Intercepted file download:", url);
+      await toast.show("Downloading...", "Fetching file", "download");
+
+      const response = await fetch(url);
+      const buffer = await response.arrayBuffer();
+      const uint8 = new Uint8Array(buffer);
+
+      // Determine Filename
+      let filename = "download";
+      // Try from URL params first
+      try {
+        const urlObj = new URL(url);
+        const disposition = urlObj.searchParams.get("response-content-disposition");
+        if (disposition) {
+          const match = disposition.match(/filename="?([^"]+)"?/);
+          if (match && match[1]) filename = match[1];
+        } else {
+          // Fallback to path
+          const parts = urlObj.pathname.split("/");
+          filename = parts[parts.length - 1];
+        }
+      } catch (err) {
+        console.warn("Filename extraction failed", err);
+      }
+
+      // Try Header if available and URL extraction failed/defaulted
+      if (filename === "download") {
+        const headerDisp = response.headers.get("Content-Disposition");
+        if (headerDisp) {
+          const match = headerDisp.match(/filename="?([^"]+)"?/);
+          if (match && match[1]) filename = match[1];
+        }
+      }
+
+      console.log("[WE-DEBUG] Filename determined:", filename);
+
+      let isEncrypted = true;
+      if (uint8.length < ENC_BIN_PREFIX.byteLength) isEncrypted = false;
+      else {
+        for (let i = 0; i < ENC_BIN_PREFIX.byteLength; i++) {
+          if (uint8[i] !== ENC_BIN_PREFIX[i]) {
+            isEncrypted = false;
+            break;
+          }
+        }
+      }
+
+      let finalData = uint8;
+      if (isEncrypted) {
+        console.log("[WE-DEBUG] Encrypted file detected. Decrypting...");
+        try {
+          finalData = await encrypter.decryptBinary(uint8);
+          // Remove prefix from filename if present (optional, but good practice if we were adding extension)
+        } catch (decErr) {
+          console.error("Decryption failed", decErr);
+          await toast.show("Error", "Decryption failed", "download");
+          // If decryption fails, maybe download original? Or stop? 
+          // Better to let user have original if decryption fails? Or maybe it wasn't encrypted by us?
+          // If checking prefix passed, it IS encrypted by us. So fail is real fail.
+          return;
+        }
+      } else {
+        console.log("[WE-DEBUG] File not encrypted.");
+      }
+
+      // Download logic
+      const blob = new Blob([finalData]);
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      await toast.hide("download");
+
+    } catch (err) {
+      console.error("Error checking/downloading file", err);
+      await toast.show("Error", "Download failed", "download");
+    }
+  }
+}, true);
